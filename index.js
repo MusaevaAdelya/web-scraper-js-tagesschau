@@ -1,5 +1,3 @@
-// index.js
-
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 const { scrapeAllNewsObjects } = require('./scraperFunctions');
@@ -7,6 +5,7 @@ const { scrapeAllNewsObjects } = require('./scraperFunctions');
 const PATH = "https://meta.tagesschau.de/";
 
 (async () => {
+  const startTime = Date.now(); // Start the timer
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
 
@@ -31,4 +30,8 @@ const PATH = "https://meta.tagesschau.de/";
   console.log(`Total comments scraped: ${totalComments}`);
 
   await browser.close();
+
+  const endTime = Date.now(); // End the timer
+  const timeSpent = (endTime - startTime) / 1000; // Convert to seconds
+  console.log(`Scraper completed in ${timeSpent.toFixed(2)} seconds.`);
 })();
