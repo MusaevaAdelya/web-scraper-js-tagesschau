@@ -68,6 +68,69 @@ async function scrapeComments(page, newsUrl) {
   }, newsUrl);
 }
 
+async function scrapeAllComments(page, newsUrl) {
+  let commentsData = [];
+  let nextPageUrl = newsUrl;
+
+  while (nextPageUrl) {
+    // Navigate to the current page
+    console.log(`Scraping page: ${nextPageUrl}`);
+    await page.goto(nextPageUrl, { waitUntil: "networkidle2" });
+    
+
+    // Scrape comments on the current page
+    const currentPageComments = await scrapeComments(page, newsUrl);
+    commentsData.push(...currentPageComments);
+
+    // Check for the "Next Page" button
+    nextPageUrl = await page.evaluate(() => {
+      const nextPageElement = document.querySelector(
+        ".pager__item.pager__item--next a"
+      );
+      return nextPageElement ? nextPageElement.href : null;
+    });
+    
+  }
+
+  return commentsData;
+}
+
+// This function now also scrapes all comments and returns the complete object
+async function scrapeNewsObject(page, PATH, newsUrl) {
+  await page.goto(PATH + newsUrl, { waitUntil: "networkidle2" });
+
+  const result = await page.evaluate(() => {
+    const nachrichten_titel =
+      document.querySelector(".field--name-title")?.innerText.trim() || "";
+    const nachrichten_beschreibung =
+      document.querySelector(".readmore__content p")?.innerText.trim() || "";
+    const nachrichten_datum =
+      document.querySelector(".story__footer time")?.innerText.trim() || "";
+    const kommentar_anzahl =
+      document.querySelector(".story__count .text-highlighted")?.innerText.trim() || "";
+
+    return {
+      nachrichten_titel,
+      nachrichten_beschreibung,
+      nachrichten_datum,
+      kommentar_anzahl,
+    };
+  });
+
+  const newsObject = {
+    nachrichten_url: PATH + newsUrl,
+    ...result,
+  };
+
+  // After scraping the news data, also scrape all comments
+  const commentsData = await scrapeAllComments(page, newsObject.nachrichten_url);
+  newsObject.kommentare = commentsData;
+
+  return newsObject;
+}
+
 module.exports = {
-  scrapeComments
+  scrapeComments,
+  scrapeAllComments,
+  scrapeNewsObject
 };
