@@ -1,0 +1,14 @@
+{
+  "name": "tagesschau",
+  "version": "1.0.0",
+  "description": "Erstellen eines Textkorpus von Zuschauerkommentaren auf einer Webseite des öffentlich-rechtlichen Rundfunks",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "Adelya Musaeva",
+  "license": "ISC",
+  "dependencies": {
+    "puppeteer": "^23.10.1"
+  }
+}
