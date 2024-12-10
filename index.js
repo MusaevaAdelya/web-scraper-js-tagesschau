@@ -1,8 +1,37 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
 
+const { scrapeComments } = require('./scraperFunctions');
+
 const PATH = "https://meta.tagesschau.de/";
 const result = [];
+
+async function scrapeAllComments(page, newsUrl) {
+  let commentsData = [];
+  let nextPageUrl = newsUrl;
+
+  while (nextPageUrl) {
+    // Navigate to the current page
+    console.log(`Scraping page: ${nextPageUrl}`);
+    await page.goto(nextPageUrl, { waitUntil: "networkidle2" });
+    
+
+    // Scrape comments on the current page
+    const currentPageComments = await scrapeComments(page, newsUrl);
+    commentsData.push(...currentPageComments);
+
+    // Check for the "Next Page" button
+    nextPageUrl = await page.evaluate(() => {
+      const nextPageElement = document.querySelector(
+        ".pager__item.pager__item--next a"
+      );
+      return nextPageElement ? nextPageElement.href : null;
+    });
+    
+  }
+
+  return commentsData;
+}
 
 (async () => {
   const browser = await puppeteer.launch({ headless: true });
@@ -28,7 +57,7 @@ const result = [];
 
   await page.goto(PATH + firstNewsUrl, { waitUntil: "networkidle2" });
 
-  let   = await page.evaluate(() => {
+  let newsObject = await page.evaluate(() => {
     const nachrichten_titel =
       document.querySelector(".field--name-title")?.innerText.trim() || "";
     const nachrichten_beschreibung =
@@ -53,78 +82,11 @@ const result = [];
     ...newsObject,
   };
 
-  const commentsData = await page.evaluate((newsUrl) => {
-    return Array.from(
-      document.querySelectorAll(
-        ".comment__mainwrapper.cardwrapper.comment.comment"
-      )
-    ).map((comment) => {
-      const article = comment.querySelector(
-        'article[data-component-id="tgm:comment"]'
-      );
-      const id = article?.id || "";
-      const commentId = id.replace("comment-", "");
-      const kommentar_url = `${newsUrl}/comment/${commentId}#${id}`;
-
-      const kommentator_name =
-        article?.querySelector("span.username")?.innerText.trim() || "";
-      const kommentator_datum =
-        article?.querySelector("time")?.innerText.trim() || "";
-      const kommentar =
-        article?.querySelector(".comment__content").textContent.trim() || "";
-      const antworten_anzahl =
-        comment
-          .querySelector(".comment__answers .hide_answers > span")
-          ?.innerText.trim() || "0";
-
-      let antworten = [];
-
-      if (antworten_anzahl > 0) {
-        antworten = Array.from(
-          comment.querySelectorAll(
-            "article.cardwrapper.comment.comment--answer"
-          )
-        ).map((answer) => {
-          const answerId = answer.id.replace("comment-", "");
-          const answer_url = `${newsUrl}/comment/${answerId}#${answer.id}`;
-
-          const answer_kommentator_name =
-            answer.querySelector("span.username")?.textContent?.trim() ||
-            "Unknown";
-
-          const answer_kommentar_datum =
-            answer
-              .querySelector("footer.comment__meta time")
-              ?.textContent?.trim() || "Unknown";
-
-          const answer_kommentar =
-            answer.querySelector(".comment__content")?.textContent?.trim() ||
-            "";
-
-          return {
-            antwort_kommentar_url: answer_url,
-            antwort_kommentator_name: answer_kommentator_name,
-            antwort__datum: answer_kommentar_datum,
-            antwort_kommentar: answer_kommentar,
-          };
-        });
-      }
-
-      return {
-        kommentar_url,
-        kommentator_name,
-        kommentator_datum,
-        kommentar,
-        antworten_anzahl,
-        antworten,
-      };
-    });
-  }, newsObject.nachrichten_url);
+  const commentsData = await scrapeAllComments(page, newsObject.nachrichten_url);
 
   newsObject.kommentare = commentsData;
 
   result.push(newsObject);
-  console.log("hello world");
  
   const outputFilePath = "comments.json";
   fs.writeFileSync(outputFilePath, JSON.stringify(result, null, 2));
