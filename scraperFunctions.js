@@ -129,8 +129,34 @@ async function scrapeNewsObject(page, PATH, newsUrl) {
   return newsObject;
 }
 
+// New function to extract and scrape all news objects from the main page
+async function scrapeAllNewsObjects(page, PATH) {
+  // Extract all URLs from the views-rows
+  const newsUrls = await page.evaluate(() => {
+    return Array.from(
+      document.querySelectorAll('.views-row a.button--primary[data-component-id="tgm:button"]')
+    )
+    .map(a => a.getAttribute("href"))
+    .filter(href => href); // Filter out any null or undefined
+  });
+
+  if (!newsUrls || newsUrls.length === 0) {
+    console.error("No news URLs found.");
+    return [];
+  }
+
+  const result = [];
+  for (const newsUrl of newsUrls) {
+    const newsObject = await scrapeNewsObject(page, PATH, newsUrl);
+    result.push(newsObject);
+  }
+
+  return result;
+}
+
 module.exports = {
   scrapeComments,
   scrapeAllComments,
-  scrapeNewsObject
+  scrapeNewsObject,
+  scrapeAllNewsObjects,
 };

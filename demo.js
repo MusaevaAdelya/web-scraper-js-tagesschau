@@ -4,7 +4,7 @@ const puppeteer = require("puppeteer");
 const fs = require("fs");
 const { scrapeNewsObject } = require('./scraperFunctions');
 
-const PATH = "https://meta.tagesschau.de/";
+const PATH = "https://meta.tagesschau.de";
 const result = [];
 
 (async () => {

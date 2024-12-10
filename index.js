@@ -1,9 +1,10 @@
+// index.js
+
 const puppeteer = require("puppeteer");
 const fs = require("fs");
-const { scrapeNewsObject } = require('./scraperFunctions');
+const { scrapeAllNewsObjects } = require('./scraperFunctions');
 
 const PATH = "https://meta.tagesschau.de/";
-const result = [];
 
 (async () => {
   const browser = await puppeteer.launch({ headless: true });
@@ -12,25 +13,12 @@ const result = [];
   await page.goto(PATH, { waitUntil: "networkidle2" });
   await page.waitForSelector(".views-row");
 
-  // Extract all URLs from the views-rows
-  const newsUrls = await page.evaluate(() => {
-    return Array.from(
-      document.querySelectorAll('.views-row a.button--primary[data-component-id="tgm:button"]')
-    )
-    .map(a => a.getAttribute("href"))
-    .filter(href => href); // Filter out any null or undefined
-  });
+  const result = await scrapeAllNewsObjects(page, PATH);
 
-  if (!newsUrls || newsUrls.length === 0) {
-    console.error("No news URLs found.");
+  if (result.length === 0) {
+    console.log("No data was scraped.");
     await browser.close();
     return;
-  }
-
-  // Loop through all found news URLs
-  for (const newsUrl of newsUrls) {
-    const newsObject = await scrapeNewsObject(page, PATH, newsUrl);
-    result.push(newsObject);
   }
 
   const outputFilePath = "comments.json";
