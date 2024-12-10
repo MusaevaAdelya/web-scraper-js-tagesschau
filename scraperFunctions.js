@@ -1,51 +1,37 @@
-async function scrapeComments(page, newsUrl) {
-  return await page.evaluate((newsUrl) => {
-    return Array.from(
-      document.querySelectorAll(
-        ".comment__mainwrapper.cardwrapper.comment.comment"
-      )
+async function scrapeComments(page, newsUrl, counter) {
+  const { comments, counts } = await page.evaluate((newsUrl) => {
+    let counts = { commentCount: 0, answerCount: 0 };
+    const comments = Array.from(
+      document.querySelectorAll(".comment__mainwrapper.cardwrapper.comment.comment")
     ).map((comment) => {
-      const article = comment.querySelector(
-        'article[data-component-id="tgm:comment"]'
-      );
+      counts.commentCount++;
+      const article = comment.querySelector('article[data-component-id="tgm:comment"]');
       const id = article?.id || "";
       const commentId = id.replace("comment-", "");
       const kommentar_url = `${newsUrl}/comment/${commentId}#${id}`;
 
-      const kommentator_name =
-        article?.querySelector("span.username")?.innerText.trim() || "";
-      const kommentator_datum =
-        article?.querySelector("time")?.innerText.trim() || "";
-      const kommentar =
-        article?.querySelector(".comment__content").textContent.trim() || "";
-      const antworten_anzahl =
-        comment
-          .querySelector(".comment__answers .hide_answers > span")
-          ?.innerText.trim() || "0";
+      const kommentator_name = article?.querySelector("span.username")?.innerText.trim() || "";
+      const kommentator_datum = article?.querySelector("time")?.innerText.trim() || "";
+      const kommentar = article?.querySelector(".comment__content")?.textContent.trim() || "";
+      const antworten_anzahl_str =
+        comment.querySelector(".comment__answers .hide_answers > span")?.innerText.trim() || "0";
+      const antworten_anzahl = parseInt(antworten_anzahl_str, 10);
 
       let antworten = [];
-
       if (antworten_anzahl > 0) {
         antworten = Array.from(
-          comment.querySelectorAll(
-            "article.cardwrapper.comment.comment--answer"
-          )
+          comment.querySelectorAll("article.cardwrapper.comment.comment--answer")
         ).map((answer) => {
+          counts.answerCount++;
           const answerId = answer.id.replace("comment-", "");
           const answer_url = `${newsUrl}/comment/${answerId}#${answer.id}`;
 
           const answer_kommentator_name =
-            answer.querySelector("span.username")?.textContent?.trim() ||
-            "Unknown";
-
+            answer.querySelector("span.username")?.textContent?.trim() || "Unknown";
           const answer_kommentar_datum =
-            answer
-              .querySelector("footer.comment__meta time")
-              ?.textContent?.trim() || "Unknown";
-
+            answer.querySelector("footer.comment__meta time")?.textContent?.trim() || "Unknown";
           const answer_kommentar =
-            answer.querySelector(".comment__content")?.textContent?.trim() ||
-            "";
+            answer.querySelector(".comment__content")?.textContent?.trim() || "";
 
           return {
             antwort_kommentar_url: answer_url,
@@ -65,37 +51,35 @@ async function scrapeComments(page, newsUrl) {
         antworten,
       };
     });
+    return { comments, counts };
   }, newsUrl);
+
+  // Update the external counter
+  counter += (counts.commentCount + counts.answerCount);
+  return { comments, counter };
 }
 
 async function scrapeAllComments(page, newsUrl) {
   let commentsData = [];
   let nextPageUrl = newsUrl;
+  let counter = 0;
 
   while (nextPageUrl) {
-    // Navigate to the current page
-    console.log(`Scraping page: ${nextPageUrl}`);
     await page.goto(nextPageUrl, { waitUntil: "networkidle2" });
-    
-
-    // Scrape comments on the current page
-    const currentPageComments = await scrapeComments(page, newsUrl);
+    let { comments: currentPageComments, counter: updatedCounter } = await scrapeComments(page, newsUrl, counter);
+    counter = updatedCounter;
     commentsData.push(...currentPageComments);
 
-    // Check for the "Next Page" button
     nextPageUrl = await page.evaluate(() => {
-      const nextPageElement = document.querySelector(
-        ".pager__item.pager__item--next a"
-      );
+      const nextPageElement = document.querySelector(".pager__item.pager__item--next a");
       return nextPageElement ? nextPageElement.href : null;
     });
-    
   }
 
-  return commentsData;
+  // Return both the data and the total count of comments + answers
+  return { commentsData, totalComments: counter };
 }
 
-// This function now also scrapes all comments and returns the complete object
 async function scrapeNewsObject(page, PATH, newsUrl) {
   await page.goto(PATH + newsUrl, { waitUntil: "networkidle2" });
 
@@ -122,14 +106,14 @@ async function scrapeNewsObject(page, PATH, newsUrl) {
     ...result,
   };
 
-  // After scraping the news data, also scrape all comments
-  const commentsData = await scrapeAllComments(page, newsObject.nachrichten_url);
+  // Scrape all comments and get the total comment count
+  const { commentsData, totalComments } = await scrapeAllComments(page, newsObject.nachrichten_url);
   newsObject.kommentare = commentsData;
 
-  return newsObject;
+  // Return both the news object and total comments count for this news item
+  return { newsObject, totalComments };
 }
 
-// New function to extract and scrape all news objects from the main page
 async function scrapeAllNewsObjects(page, PATH) {
   // Extract all URLs from the views-rows
   const newsUrls = await page.evaluate(() => {
@@ -142,16 +126,24 @@ async function scrapeAllNewsObjects(page, PATH) {
 
   if (!newsUrls || newsUrls.length === 0) {
     console.error("No news URLs found.");
-    return [];
+    return { result: [], totalUrls: 0, totalComments: 0 };
   }
 
-  const result = [];
+  let result = [];
+  let totalComments = 0;
+
   for (const newsUrl of newsUrls) {
-    const newsObject = await scrapeNewsObject(page, PATH, newsUrl);
+    const { newsObject, totalComments: itemComments } = await scrapeNewsObject(page, PATH, newsUrl);
     result.push(newsObject);
+    totalComments += itemComments;
   }
 
-  return result;
+  // Return all results along with counters
+  return {
+    result,
+    totalUrls: newsUrls.length,
+    totalComments
+  };
 }
 
 module.exports = {
