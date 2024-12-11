@@ -1,97 +1,102 @@
-// index.js
 const puppeteer = require("puppeteer");
 const fs = require("fs");
-const { scrapeNewsObject } = require('./scraperFunctions');
+const { scrapeAllNewsObjects } = require('./scraperFunctions');
 
 const PATH = "https://meta.tagesschau.de";
 
+function parseNachrichtenDatum(dateStr) {
+  // dateStr expected format: "dd.mm.yyyy"
+  const [day, month, year] = dateStr.split('.');
+  return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
+}
+
 (async () => {
-  const startTime = Date.now(); // Start the timer
+  const startTime = Date.now();
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
 
-  await page.goto(PATH, { waitUntil: "networkidle2" });
-  await page.waitForSelector(".views-row");
-
-  let result = [];
+  let allResults = [];
   let totalUrls = 0;
   let totalComments = 0;
 
-  let currentPage = 0;
+  // Conditions
+  const minUrls = 200;
+  const minComments = 20000;
+  const oneMonthMs = 30 * 24 * 60 * 60 * 1000; // approx. one month in ms
 
-  let nextPageUrl=PATH;
+  // Start from the homepage
+  let currentURL = PATH;
+  await page.goto(currentURL, { waitUntil: "networkidle2" });
+  await page.waitForSelector(".views-row");
 
-  while (currentPage < 6) {
-    // Extract all URLs from the current page
-    const newsUrls = await page.evaluate(() => {
-      return Array.from(
-        document.querySelectorAll('.views-row a.button--primary[data-component-id="tgm:button"]')
-      )
-      .map(a => a.getAttribute("href"))
-      .filter(href => href);
-    });
+  while (true) {
+    // Scrape all news objects on the current page
+    const { result, totalUrls: pageUrls, totalComments: pageComments } = await scrapeAllNewsObjects(page, PATH);
 
-    // If no URLs found on this page, break out
-    if (!newsUrls || newsUrls.length === 0) {
-      console.log("No news URLs found on this page.");
+    if (result.length === 0) {
+      console.log("No data scraped on this page. Stopping.");
       break;
     }
 
-    // Scrape each URL on the current page
-    for (const newsUrl of newsUrls) {
-      const { newsObject, totalComments: itemComments } = await scrapeNewsObject(page, PATH, newsUrl);
-      result.push(newsObject);
-      totalUrls += 1;
-      totalComments += itemComments;
-    }
+    // Append results
+    allResults.push(...result);
 
-    // If we've done 5 extra pages beyond the first, stop
-    // This might be redundant if you are controlling with the while condition
-    if (currentPage >= 5) {
+    // Update counters
+    totalUrls += pageUrls;
+    totalComments += pageComments;
+
+    // latestDate = top item, earliestDate = bottom item (since newest news appear at the top)
+    const latestDate = parseNachrichtenDatum(allResults[0].nachrichten_datum);
+    const earliestDate = parseNachrichtenDatum(allResults[allResults.length - 1].nachrichten_datum);
+
+    const dateDiff = latestDate - earliestDate;
+    console.log(`Current totals: URLs=${totalUrls}, Comments=${totalComments}, Date difference=${dateDiff}ms`);
+
+    // Check conditions
+    if (
+      totalUrls >= minUrls &&
+      totalComments >= minComments &&
+      dateDiff > oneMonthMs
+    ) {
+      console.log("Conditions met. Stopping pagination.");
       break;
     }
 
-    await page.goto(nextPageUrl, { waitUntil: "networkidle2" });
+    // After scrapeAllNewsObjects, we may be on a detail page.
+    // Return to the current pagination page.
+    await page.goto(currentURL, { waitUntil: "networkidle2" });
 
-    // Try to get the next page URL
-    const nextPageHref = await page.evaluate(() => {
-      const nextPageElement = document.querySelector(".pager__item.pager__item--next a");
-      return nextPageElement ? nextPageElement.getAttribute('href') : null;
-    });
-
-    if (!nextPageHref) {
-      // No next page
-      console.log('No next page');
+    // Check if there's a next page link
+    const nextPageLink = await page.$('.pager__item.pager__item--next a');
+    if (!nextPageLink) {
+      console.log("No next page found. Stopping.");
       break;
     }
 
-    // Construct the absolute next page URL using the base PATH
-    nextPageUrl = new URL(nextPageHref, PATH).href;
+    // Get the href for the next page
+    const nextHref = await page.evaluate(el => el.getAttribute('href'), nextPageLink);
 
-    // Go to the next page
-    await page.goto(nextPageUrl, { waitUntil: "networkidle2" });
-    await page.waitForSelector(".views-row");
+    // Construct the full URL for the next page
+    const nextPageURL = PATH + nextHref;
 
-    currentPage++;
+    // Go to the next page using goto instead of click
+    await page.goto(nextPageURL, { waitUntil: "networkidle2" });
+
+    // Update currentURL to reflect the new page
+    currentURL = nextPageURL;
   }
 
-  if (result.length === 0) {
-    console.log("No data was scraped.");
-    await browser.close();
-    return;
-  }
-
+  // Write all results to file
   const outputFilePath = "comments.json";
-  fs.writeFileSync(outputFilePath, JSON.stringify(result, null, 2));
+  fs.writeFileSync(outputFilePath, JSON.stringify(allResults, null, 2));
   console.log(`Data written to ${outputFilePath}`);
 
-  // At the end of the program, log the counters
+  // Log counters
   console.log(`Total URLs processed: ${totalUrls}`);
   console.log(`Total comments scraped: ${totalComments}`);
 
   await browser.close();
-
-  const endTime = Date.now(); // End the timer
-  const timeSpent = (endTime - startTime) / 1000; // Convert to seconds
+  const endTime = Date.now();
+  const timeSpent = (endTime - startTime) / 1000;
   console.log(`Scraper completed in ${timeSpent.toFixed(2)} seconds.`);
 })();
