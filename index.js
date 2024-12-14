@@ -1,13 +1,12 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
-const { scrapeAllNewsObjects } = require('./scraperFunctions');
+const { scrapeAllNewsObjects, convertToISO8601 } = require('./scraperFunctions');
 
 const PATH = "https://meta.tagesschau.de";
 
 function parseNachrichtenDatum(dateStr) {
-  // dateStr expected format: "dd.mm.yyyy"
-  const [day, month, year] = dateStr.split('.');
-  return new Date(parseInt(year, 10), parseInt(month, 10) - 1, parseInt(day, 10));
+  // dateStr is assumed to be a valid ISO 8601 date string
+  return new Date(dateStr);
 }
 
 (async () => {
@@ -15,14 +14,17 @@ function parseNachrichtenDatum(dateStr) {
   const browser = await puppeteer.launch({ headless: true });
   const page = await browser.newPage();
 
+  // Expose the function ONCE here
+  await page.exposeFunction('convertToISO8601', convertToISO8601);
+
   let allResults = [];
   let totalUrls = 0;
   let totalComments = 0;
 
   // Conditions
-  const minUrls = 200;
-  const minComments = 20000;
-  const oneMonthMs = 30 * 24 * 60 * 60 * 1000; // approx. one month in ms
+  const minUrls = 5;
+  const minComments = 1000;
+  const oneMonthMs = 2 * 24 * 60 * 60 * 1000; // approx. one month in ms
 
   // Start from the homepage
   let currentURL = PATH;
