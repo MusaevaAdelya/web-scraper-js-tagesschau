@@ -2,7 +2,7 @@ async function scrapeComments(page, newsUrl, counter) {
   const { comments, counts } = await page.evaluate(async (newsUrl) => {
     let counts = { commentCount: 0, answerCount: 0 };
     const commentNodes = Array.from(
-      document.querySelectorAll(".comment__mainwrapper.cardwrapper.comment.comment")
+      document.querySelectorAll(".comment__mainwrapper.cardwrapper.comment.comment:not(.moderator)")
     );
 
     const comments = [];
@@ -10,7 +10,7 @@ async function scrapeComments(page, newsUrl, counter) {
       counts.commentCount++;
       const article = comment.querySelector('article[data-component-id="tgm:comment"]');
       const id = article?.id || "";
-      const commentId = id.replace("comment-", "");
+      const commentId = parseInt(id.replace("comment-", ""));
       const kommentar_url = `${newsUrl}/comment/${commentId}#${id}`;
 
       const kommentator_name = article?.querySelector("span.username")?.innerText.trim() || "";
@@ -18,7 +18,7 @@ async function scrapeComments(page, newsUrl, counter) {
       
       // Await the exposed function
       const kommentator_datum = commentTimeElement 
-        ? await convertToISO8601(commentTimeElement.innerText.trim()) 
+        ? convertToISO8601(commentTimeElement.innerText.trim()) 
         : "";
       
       const kommentar = article?.querySelector(".comment__content")?.textContent.trim() || "";
@@ -34,7 +34,7 @@ async function scrapeComments(page, newsUrl, counter) {
 
         for (const answer of answerNodes) {
           counts.answerCount++;
-          const answerId = answer.id.replace("comment-", "");
+          const answerId = parseInt(answer.id.replace("comment-", ""));
           const answer_url = `${newsUrl}/comment/${answerId}#${answer.id}`;
 
           const answer_kommentator_name =
@@ -44,9 +44,9 @@ async function scrapeComments(page, newsUrl, counter) {
             ?.textContent?.trim() || "Unknown";
           
           // Await the exposed function if it's a valid date (you can conditionally check)
-          let antwort__datum = raw_answer_datum;
+          let antwort_datum = raw_answer_datum;
           try {
-            antwort__datum = await convertToISO8601(raw_answer_datum);
+            antwort_datum = await convertToISO8601(raw_answer_datum);
           } catch (err) {
             // If it's not a recognizable format, leave it as is or handle the error
           }
@@ -55,15 +55,17 @@ async function scrapeComments(page, newsUrl, counter) {
             answer.querySelector(".comment__content")?.textContent?.trim() || "";
 
           antworten.push({
-            antwort_kommentar_url: answer_url,
-            antwort_kommentator_name: answer_kommentator_name,
-            antwort__datum,
+            antwort_id:answerId,
+            antwort_url: answer_url,
+            antwort_name: answer_kommentator_name,
+            antwort_datum,
             antwort_kommentar: answer_kommentar,
           });
         }
       }
 
       comments.push({
+        kommentar_id:commentId,
         kommentar_url,
         kommentator_name,
         kommentator_datum,
@@ -133,6 +135,7 @@ async function scrapeNewsObject(page, PATH, newsUrl) {
   });
 
   const newsObject = {
+    nachrichten_id:parseInt(newsUrl.split('/')[2]),
     nachrichten_url: PATH + newsUrl,
     ...result,
   };
