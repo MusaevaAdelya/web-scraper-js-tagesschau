@@ -14,12 +14,18 @@ async function scrapeComments(page, newsUrl, counter) {
       const kommentar_url = `${newsUrl}/comment/${commentId}#${id}`;
 
       const kommentator_name = article?.querySelector("span.username")?.innerText.trim() || "";
-      const commentTimeElement = article?.querySelector("time");
-      
+
+
+      const commentTimeElement = article?.querySelector("time")?.innerText.trim() || "";
       // Await the exposed function
-      const kommentator_datum = commentTimeElement 
-        ? convertToISO8601(commentTimeElement.innerText.trim()) 
-        : "";
+      let kommentator_datum = commentTimeElement;
+      try {
+        kommentator_datum = await convertToISO8601(commentTimeElement);
+      } catch (err) {
+        // If it's not a recognizable format, leave it as is or handle the error
+      }
+
+
       
       const kommentar = article?.querySelector(".comment__content")?.textContent.trim() || "";
       const antworten_anzahl_str =

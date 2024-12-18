@@ -22,9 +22,9 @@ function parseNachrichtenDatum(dateStr) {
   let totalComments = 0;
 
   // Conditions
-  const minUrls = 5;
-  const minComments = 1000;
-  const oneMonthMs = 2 * 24 * 60 * 60 * 1000; // approx. one month in ms
+  const minUrls = 200;
+  const minComments = 20000;
+  const oneMonthMs = 30 * 24 * 60 * 60 * 1000; // approx. one month in ms
 
   // Start from the homepage
   let currentURL = PATH;
