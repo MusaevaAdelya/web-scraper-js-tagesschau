@@ -1,6 +1,6 @@
 const puppeteer = require("puppeteer");
 const fs = require("fs");
-const { scrapeAllNewsObjects, convertToISO8601 } = require('./scraperFunctions');
+const { scrapeAllNewsObjects, formatCommentDate } = require('./scraperFunctions');
 
 const PATH = "https://meta.tagesschau.de";
 
@@ -15,16 +15,21 @@ function parseNachrichtenDatum(dateStr) {
   const page = await browser.newPage();
 
   // Expose the function ONCE here
-  await page.exposeFunction('convertToISO8601', convertToISO8601);
+  await page.exposeFunction('formatCommentDate', formatCommentDate);
 
-  let allResults = [];
+  let corpus = [];
+  let allNews=[];
   let totalUrls = 0;
   let totalComments = 0;
 
   // Conditions
-  const minUrls = 200;
-  const minComments = 20000;
-  const oneMonthMs = 30 * 24 * 60 * 60 * 1000; // approx. one month in ms
+  // const minUrls = 200;
+  // const minComments = 20000;
+  // const oneMonthMs = 30 * 24 * 60 * 60 * 1000; // approx. one month in ms
+
+  const minUrls = 5;
+  const minComments = 100;
+  const oneMonthMs = 0; // approx. one month in ms
 
   // Start from the homepage
   let currentURL = PATH;
@@ -33,7 +38,7 @@ function parseNachrichtenDatum(dateStr) {
 
   while (true) {
     // Scrape all news objects on the current page
-    const { result, totalUrls: pageUrls, totalComments: pageComments } = await scrapeAllNewsObjects(page, PATH);
+    const { result, totalUrls: pageUrls, totalComments: pageComments, news } = await scrapeAllNewsObjects(page, PATH);
 
     if (result.length === 0) {
       console.log("No data scraped on this page. Stopping.");
@@ -41,15 +46,16 @@ function parseNachrichtenDatum(dateStr) {
     }
 
     // Append results
-    allResults.push(...result);
+    corpus.push(...result);
+    allNews.push(...news)
 
     // Update counters
     totalUrls += pageUrls;
     totalComments += pageComments;
 
     // latestDate = top item, earliestDate = bottom item (since newest news appear at the top)
-    const latestDate = parseNachrichtenDatum(allResults[0].nachrichten_datum);
-    const earliestDate = parseNachrichtenDatum(allResults[allResults.length - 1].nachrichten_datum);
+    const latestDate = parseNachrichtenDatum(allNews[0].nachrichten_datum);
+    const earliestDate = parseNachrichtenDatum(allNews[allNews.length - 1].nachrichten_datum);
 
     const dateDiff = latestDate - earliestDate;
     console.log(`Current totals: URLs=${totalUrls}, Comments=${totalComments}, Date difference=${dateDiff}ms`);
@@ -89,8 +95,9 @@ function parseNachrichtenDatum(dateStr) {
   }
 
   // Write all results to file
-  const outputFilePath = "comments.json";
-  fs.writeFileSync(outputFilePath, JSON.stringify(allResults, null, 2));
+  const outputFilePath = "Kommentare.json";
+  fs.writeFileSync(outputFilePath, JSON.stringify(corpus, null, 2));
+  fs.writeFileSync("news.json", JSON.stringify(allNews, null, 2));
   console.log(`Data written to ${outputFilePath}`);
 
   // Log counters

@@ -2,40 +2,55 @@ async function scrapeComments(page, newsUrl, counter) {
   const { comments, counts } = await page.evaluate(async (newsUrl) => {
     let counts = { commentCount: 0, answerCount: 0 };
     const commentNodes = Array.from(
-      document.querySelectorAll(".comment__mainwrapper.cardwrapper.comment.comment:not(.moderator)")
+      document.querySelectorAll(
+        ".comment__mainwrapper.cardwrapper.comment.comment:not(.moderator)"
+      )
     );
 
     const comments = [];
     for (const comment of commentNodes) {
       counts.commentCount++;
-      const article = comment.querySelector('article[data-component-id="tgm:comment"]');
+      const article = comment.querySelector(
+        'article[data-component-id="tgm:comment"]'
+      );
       const id = article?.id || "";
       const commentId = parseInt(id.replace("comment-", ""));
       const kommentar_url = `${newsUrl}/comment/${commentId}#${id}`;
 
-      const kommentator_name = article?.querySelector("span.username")?.innerText.trim() || "";
+      const kommentator_name =
+        article?.querySelector("span.username")?.innerText.trim() || "";
 
-
-      const commentTimeElement = article?.querySelector("time")?.innerText.trim() || "";
+      const commentTimeElement =
+        article?.querySelector("time")?.innerText.trim() || "";
       // Await the exposed function
       let kommentator_datum = commentTimeElement;
       try {
-        kommentator_datum = await convertToISO8601(commentTimeElement);
+        kommentator_datum = await formatCommentDate(commentTimeElement);
       } catch (err) {
-        // If it's not a recognizable format, leave it as is or handle the error
+        console.log(err);
       }
 
-
-      
-      const kommentar = article?.querySelector(".comment__content")?.textContent.trim() || "";
+      const kommentar =
+        article?.querySelector(".comment__content")?.textContent.trim() || "";
       const antworten_anzahl_str =
-        comment.querySelector(".comment__answers .hide_answers > span")?.innerText.trim() || "0";
+        comment
+          .querySelector(".comment__answers .hide_answers > span")
+          ?.innerText.trim() || "0";
       const antworten_anzahl = parseInt(antworten_anzahl_str, 10);
 
-      let antworten = [];
+      comments.push({
+        Kommentar: kommentar,
+        Datum: kommentator_datum,
+        Linkadresse: kommentar_url,
+        Autor: kommentator_name,
+        Kommentar_ID: commentId,
+      });
+
       if (antworten_anzahl > 0) {
         const answerNodes = Array.from(
-          comment.querySelectorAll("article.cardwrapper.comment.comment--answer")
+          comment.querySelectorAll(
+            "article.cardwrapper.comment.comment--answer"
+          )
         );
 
         for (const answer of answerNodes) {
@@ -44,41 +59,34 @@ async function scrapeComments(page, newsUrl, counter) {
           const answer_url = `${newsUrl}/comment/${answerId}#${answer.id}`;
 
           const answer_kommentator_name =
-            answer.querySelector("span.username")?.textContent?.trim() || "Unknown";
-          const raw_answer_datum = answer
-            .querySelector("footer.comment__meta time")
-            ?.textContent?.trim() || "Unknown";
-          
+            answer.querySelector("span.username")?.textContent?.trim() ||
+            "Unknown";
+          const raw_answer_datum =
+            answer
+              .querySelector("footer.comment__meta time")
+              ?.textContent?.trim() || "Unknown";
+
           // Await the exposed function if it's a valid date (you can conditionally check)
           let antwort_datum = raw_answer_datum;
           try {
-            antwort_datum = await convertToISO8601(raw_answer_datum);
+            antwort_datum = await formatCommentDate(raw_answer_datum);
           } catch (err) {
             // If it's not a recognizable format, leave it as is or handle the error
           }
 
           const answer_kommentar =
-            answer.querySelector(".comment__content")?.textContent?.trim() || "";
+            answer.querySelector(".comment__content")?.textContent?.trim() ||
+            "";
 
-          antworten.push({
-            antwort_id:answerId,
-            antwort_url: answer_url,
-            antwort_name: answer_kommentator_name,
-            antwort_datum,
-            antwort_kommentar: answer_kommentar,
+          comments.push({
+            Kommentar: answer_kommentar,
+            Datum: antwort_datum,
+            Linkadresse: answer_url,
+            Autor: answer_kommentator_name,
+            Kommentar_ID: answerId,
           });
         }
       }
-
-      comments.push({
-        kommentar_id:commentId,
-        kommentar_url,
-        kommentator_name,
-        kommentator_datum,
-        kommentar,
-        antworten_anzahl,
-        antworten,
-      });
     }
 
     return { comments, counts };
@@ -117,31 +125,19 @@ async function scrapeNewsObject(page, PATH, newsUrl) {
   await page.goto(PATH + newsUrl, { waitUntil: "networkidle2" });
 
   const result = await page.evaluate(async () => {
-    const nachrichten_titel =
-      document.querySelector(".field--name-title")?.innerText.trim() || "";
-    const nachrichten_beschreibung =
-      document.querySelector(".readmore__content p")?.innerText.trim() || "";
-    const timeElement = document.querySelector(".story__footer time");
-
-    // Await the function here as well
-    const nachrichten_datum = timeElement
-      ? await convertToISO8601(timeElement.innerText.trim())
-      : "";
-
-    let kommentar_anzahl =
-      document.querySelector(".story__count .text-highlighted")?.innerText.trim() || "0";
-    kommentar_anzahl = parseInt(kommentar_anzahl, 10);
+    const timeElement = document
+      .querySelector(".story__footer time")
+      .textContent?.trim();
+    const [day, month, year] = timeElement.split(".");
+    const nachrichten_datum = `${year}-${month}-${day}`;
 
     return {
-      nachrichten_titel,
-      nachrichten_beschreibung,
       nachrichten_datum,
-      kommentar_anzahl,
     };
   });
 
   const newsObject = {
-    nachrichten_id:parseInt(newsUrl.split('/')[2]),
+    nachrichten_id: parseInt(newsUrl.split("/")[2]),
     nachrichten_url: PATH + newsUrl,
     ...result,
   };
@@ -151,10 +147,8 @@ async function scrapeNewsObject(page, PATH, newsUrl) {
     page,
     newsObject.nachrichten_url
   );
-  newsObject.kommentare = commentsData;
 
-  // Return both the news object and total comments count for this news item
-  return { newsObject, totalComments };
+  return { commentsObject: commentsData, newsObject, totalComments };
 }
 
 async function scrapeAllNewsObjects(page, PATH) {
@@ -175,38 +169,31 @@ async function scrapeAllNewsObjects(page, PATH) {
   }
 
   let result = [];
+  let news = [];
   let totalComments = 0;
 
   for (const newsUrl of newsUrls) {
-    const { newsObject, totalComments: itemComments } = await scrapeNewsObject(
-      page,
-      PATH,
-      newsUrl
-    );
-    result.push(newsObject);
+    const {
+      commentsObject,
+      newsObject,
+      totalComments: itemComments,
+    } = await scrapeNewsObject(page, PATH, newsUrl);
+    result.push(...commentsObject);
+    news.push(newsObject);
     totalComments += itemComments;
   }
 
   // Return all results along with counters
   return {
     result,
+    news,
     totalUrls: newsUrls.length,
     totalComments,
   };
 }
 
-// Function to convert dates into ISO 8601
-function convertToISO8601(dateString) {
-  const basicDatePattern = /^(\d{2})\.(\d{2})\.(\d{4})$/;
-  if (basicDatePattern.test(dateString)) {
-    const [, day, month, year] = dateString.match(basicDatePattern);
-    const date = new Date(`${year}-${month}-${day}T00:00:00Z`);
-    return date.toISOString();
-  }
-
-  const detailedDatePattern =
-    /^(\d{2})\.\s([a-zA-ZäöüÄÖÜß]+)\s(\d{4})\s•\s(\d{2}):(\d{2})\sUhr$/;
-  const monthMap = {
+function formatCommentDate(input) {
+  const months = {
     Januar: "01",
     Februar: "02",
     März: "03",
@@ -220,18 +207,17 @@ function convertToISO8601(dateString) {
     November: "11",
     Dezember: "12",
   };
-  if (detailedDatePattern.test(dateString)) {
-    const [, day, monthName, year, hour, minute] =
-      dateString.match(detailedDatePattern);
-    const month = monthMap[monthName];
-    if (!month) {
-      throw new Error(`Unrecognized month name: ${monthName}`);
-    }
-    const date = new Date(`${year}-${month}-${day}T${hour}:${minute}:00Z`);
-    return date.toISOString();
-  }
 
-  throw new Error(`Unrecognized date format: ${dateString}`);
+  // Split input into date and time parts
+  const [datePart, timePart] = input.split(" • ");
+  let [day, monthName, year] = datePart.split(" ");
+
+  day = day.replace(".", ""); // Remove trailing dot from day
+  const [hours, minutes] = timePart.replace(" Uhr", "").split(":");
+
+  // Format the date in YYYY-MM-DD-HH:MM format
+  const month = months[monthName];
+  return `${year}-${month}-${day.padStart(2, "0")}-${hours}:${minutes}`;
 }
 
 module.exports = {
@@ -239,5 +225,5 @@ module.exports = {
   scrapeAllComments,
   scrapeNewsObject,
   scrapeAllNewsObjects,
-  convertToISO8601
+  formatCommentDate,
 };
